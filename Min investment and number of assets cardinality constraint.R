@@ -93,3 +93,36 @@ plot.ef(ia, list(ef.risk, ef.mad), portfolio.mad, F)
 
 plot.transition.map(ef.risk)
 plot.transition.map(ef.mad)
+
+#--------------------------------------------------------------------------
+# Limit number of assets to 3
+# Add binary[0/1] variables
+# 0.00001 * b <= x.i <= 0.8 * b
+# SUM b.i = 3
+#--------------------------------------------------------------------------
+
+# SUM x.i = 1
+constraints = new.constraints(n, rep(1, n), 1, type = '=')		
+
+# New add binary constraint	
+# adjust prior constraints: add b.i
+constraints = add.variables(n, constraints)
+
+# index of binary variables b.i
+constraints$binary.index = (n+1):(2*n)
+
+# 0.00001 * b <= x.i <= 0.8 * b
+# x.i >= 0.00001 * b 
+constraints = add.constraints(rbind(diag(n), -0.00001 * diag(n)), rep(0, n), type = '>=', constraints)
+
+# x.i <= 0.8 * b
+constraints = add.constraints(rbind(diag(n), -0.8 * diag(n)), rep(0, n), type = '<=', constraints)
+
+# SUM b.i = 3
+constraints = add.constraints(c(rep(0,n), rep(1,n)), 3, type = '=', constraints)
+
+# create efficient frontier(s)
+ef.risk = portopt(ia, constraints, 50, 'Risk')
+ef.risk$weight = ef.risk$weight[, 1:n]
+ef.mad = portopt(ia, constraints, 50, 'MAD', min.mad.portfolio)
+ef.mad$weight = ef.mad$weight[, 1:n]

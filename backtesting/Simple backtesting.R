@@ -19,7 +19,7 @@ bt.simple <- function(data, signal)
 }
 
 # Test for bt.simple functions
-load.packages('quantmod')
+library('quantmod')
 
 # load historical prices from Yahoo Finance
 data = getSymbols('SPY', src = 'yahoo', from = '1980-01-01', auto.assign = F)

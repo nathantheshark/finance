@@ -110,7 +110,11 @@ load.packages('quantmod')
 
 # load S&P Components csv file
 SP500 = read.csv('S&P 500 Components.csv', header=TRUE, stringsAsFactors=FALSE)
-all.symbols = SP500$Ticker.symbol[1:100]
+###  two vectors size of 35 is length of 1225, same as symmetric trade of length 50
+### takes 3-4 hrs to run using parallel processing
+symbols.1 = SP500$Ticker.symbol[1:25]
+symbols.2 = SP500$Ticker.symbol[51:75]
+all.symbols = c(symbols.1, symbols.2)
 
 ## list of symbols to be used, along with names
 #all.symbols = c('DAL','AAMRQ','UAL','LCC','ALK','LUV','JBLU')
@@ -121,10 +125,8 @@ all.data <- new.env()
 getSymbols(all.symbols, src = 'yahoo', from = '1900-01-01', env = all.data, auto.assign = T)
 
 # get number of rows N that will be in dataframe of outputs
-N = 0
-for (a in seq(length(all.symbols)-1:1)) {
-	N = N + a
-}
+half = length(all.symbols) / 2
+N = half ^ 2
 
 # create empty data frame with rownames
 df = data.frame(
@@ -134,67 +136,21 @@ df = data.frame(
 		close.correl=rep(NA, N), close.coint.p=rep(NA, N)
 )
 
-###########################################################
-## STOP HERE AND GO TO PARALLEL PROCESSING ##
-##   2/11/2013 NJB - CHECK VALUES AND CONFIRM OK BEFORE DELETING THE BELOW SECTION  ##
 
-# loop values through all.symbols using i, j
-r = 1		# row to paste into
-
-for (i in 1:(length(all.symbols)-1)) {
-	for (j in (i+1):length(all.symbols)) {
-		
-		print(i)
-		print(j)
-		
-		# load historical prices from Yahoo Finance
-		data1 = all.data[[ls(all.data)[i]]]
-		data2 = all.data[[ls(all.data)[j]]]		
-		
-		#hist.prices = merge(AAMRQ,DAL,UAL,LCC,ALK,LUV,JBLU)
-		hist.prices = merge(data1, data2)
-		hist.prices.close = Cl(hist.prices)
-		#colnames(hist.prices.close) = symbols
-		colnames(hist.prices.close) = c(all.symbols[i], all.symbols[j])
-		hist.prices.open = Op(hist.prices)
-		#colnames(hist.prices.open) = symbols
-		colnames(hist.prices.close) = c(all.symbols[i], all.symbols[j])		
-		
-		# remove any missing data
-		hist.prices.close = na.omit(hist.prices.close)
-		hist.prices.open = na.omit(hist.prices.open)
-		
-		# find optimal value (maximize cagr)
-		optimal.cagr = optimize(f=bt.pairstrade.longonly.optim, interval=0:4, maximum=TRUE, hist.prices.close, hist.prices.open)
-		sd.trigger = optimal.cagr$maximum
-		
-		# get all statistics from backtest
-		pairs.trade = bt.pairstrade.longonly(sd.trigger, hist.prices.close, hist.prices.open)
-		
-		# add row to data.frame df containg output statistics of optimal sd.trigger values
-		df[r,] = c(
-				all.symbols[i], all.symbols[j],	pairs.trade$sd.trigger, sum(pairs.trade$cagr), 
-				max(pairs.trade$best), min(pairs.trade$worst), min(pairs.trade$equity), max(pairs.trade$equity), 
-				cor(hist.prices.open[,1], hist.prices.open[,2]), cointegration(hist.prices.open[,1], hist.prices.open[,2]), 
-				cor(hist.prices.close[,1], hist.prices.close[,2]), cointegration(hist.prices.close[,1], hist.prices.close[,2])
-				)
-		r = r + 1
-	}
-}
-
-##############################################
 ############# parallel processing ############
 library(foreach)
 library(doParallel)
 cl <- makeCluster(4)
 registerDoParallel(cl)
 
+
 # create list objects of all pairs historical prices for open and close
 all.hist.prices.close = list()
 all.hist.prices.open = list()
 l = 1
-for (i in 1:(length(all.symbols)-1)) {
-	for (j in (i+1):length(all.symbols)) {
+for (i in 1:half) {
+	for (j in (half+1):length(all.symbols)) {
+		
 		print(i)
 		print(j)
 		
@@ -223,9 +179,12 @@ for (i in 1:(length(all.symbols)-1)) {
 }
 
 # use parallel computing to find optimal sd.trigger for each possible pair
+# %dopar% if parallel
+# %do% if serial
 tic <- Sys.time()
 optimal.sd.triggers <- foreach(l=1:(length(all.hist.prices.open)), .combine='c', .packages='quantmod') %dopar% {
-		hist.prices.close = all.hist.prices.close[[l]]
+	print(paste(l, " of ", N))
+	hist.prices.close = all.hist.prices.close[[l]]
 	hist.prices.open = all.hist.prices.open[[l]]
 	
 	# find optimal value (maximize cagr)
@@ -237,89 +196,37 @@ Sys.time() - tic
 # use backtesting to get stats for all optimal sd.trigger for all pairs and populate to result data.frame
 # loop values through all.symbols using i, j
 l = 1		# row to paste into
-
-for (i in 1:(length(ls(all.data))-1)) {
-	for (j in (i+1):length(ls(all.data))) {		
+	
+for (i in 1:half) {
+	for (j in (half+1):length(ls(all.data))) {	
+	
 		print(i)
 		print(j)
-		
+			
 		sd.trigger = optimal.sd.triggers[l]
 		hist.prices.close = all.hist.prices.close[[l]]
 		hist.prices.open = all.hist.prices.open[[l]]
 		symb1 = ls(all.data)[i]
 		symb2 = ls(all.data)[j]
-		
+			
 		# backtest at optimal sd.trigger to get statistics
-		pairs.trade = bt.pairstrade.longonly(sd.trigger, hist.prices.close, hist.prices.open)
+		if (length(hist.prices.close) > 0) {
+			pairs.trade = bt.pairstrade.longonly(sd.trigger, hist.prices.close, hist.prices.open)
 		
-		# add row to data.frame df containg output statistics of optimal sd.trigger values
-		df[l,] = c(
+			
+			# add row to data.frame df containg output statistics of optimal sd.trigger values
+			df[l,] = c(
 				ls(all.data)[i], ls(all.data)[j],	pairs.trade$sd.trigger, sum(pairs.trade$cagr), 
 				max(pairs.trade$best), min(pairs.trade$worst), min(pairs.trade$equity), max(pairs.trade$equity), 
 				cor(hist.prices.open[,1], hist.prices.open[,2]), cointegration(hist.prices.open[,1], hist.prices.open[,2]), 
 				cor(hist.prices.close[,1], hist.prices.close[,2]), cointegration(hist.prices.close[,1], hist.prices.close[,2])
-		)
+			)
+		}
+
 		l = l + 1
 	}
 }
 
 
-write.csv(df, "results.csv")
-
-
-
-
-
-
-
-
-
-
-
-
-######################################################################################
-
-# OLD BEFORE OPTIMIZATION
-
-# backtest the long only pairs trade
-cagr = c()
-best = c()
-worst = c()
-min.equity = c()
-max.equity = c()
-sequence = seq(0.1, 4, 0.1)
-for ( sd.trigger in sequence ) {
-	#sd.trigger = 1
-	pairs.trade = bt.pairstrade.longonly(sd.trigger, hist.prices.close, hist.prices.open)
-	cagr = c(cagr, pairs.trade$cagr, sum(pairs.trade$cagr))
-	best = c(best, pairs.trade$best, max(pairs.trade$best))
-	worst = c(worst, pairs.trade$worst, min(pairs.trade$worst))
-	min.equity = c(min.equity, min(pairs.trade$equity[, 1]), min(pairs.trade$equity[, 2]), min(pairs.trade$equity))
-	max.equity = c(max.equity, max(pairs.trade$equity[, 1]), max(pairs.trade$equity[, 2]), max(pairs.trade$equity))
-	
-}
-cagr = matrix(cagr, ncol=3, byrow=TRUE)
-best = matrix(best, ncol=3, byrow=TRUE)
-worst = matrix(worst, ncol=3, byrow=TRUE)
-min.equity = matrix(min.equity, ncol=3, byrow=TRUE)
-max.equity = matrix(max.equity, ncol=3, byrow=TRUE)
-rownames(cagr) = sequence
-rownames(best) = sequence
-rownames(worst) = sequence
-rownames(min.equity) = sequence
-rownames(max.equity) = sequence
-colnames(cagr) = c( colnames(hist.prices.close), "overall")
-colnames(best) = c( colnames(hist.prices.close), "overall")
-colnames(worst) = c( colnames(hist.prices.close), "overall")
-colnames(min.equity) = c( colnames(hist.prices.close), "overall")
-colnames(max.equity) = c( colnames(hist.prices.close), "overall")
-
-
-# plot results
-xrange = as.numeric(rownames(cagr))
-plot(min.equity[, 3], cagr[, 3])
-lines(min.equity[, 3], cagr[, 3])
-
-
-
+write.csv(df, "results 1-25 and 51-75.csv")
 

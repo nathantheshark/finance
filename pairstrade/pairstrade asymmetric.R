@@ -112,8 +112,8 @@ load.packages('quantmod')
 SP500 = read.csv('S&P 500 Components.csv', header=TRUE, stringsAsFactors=FALSE)
 ###  two vectors size of 35 is length of 1225, same as symmetric trade of length 50
 ### takes 3-4 hrs to run using parallel processing
-symbols.1 = SP500$Ticker.symbol[1:25]
-symbols.2 = SP500$Ticker.symbol[51:75]
+symbols.1 = SP500$Ticker.symbol[451:475]
+symbols.2 = SP500$Ticker.symbol[476:500]
 all.symbols = c(symbols.1, symbols.2)
 
 ## list of symbols to be used, along with names
@@ -210,7 +210,7 @@ for (i in 1:half) {
 		symb2 = ls(all.data)[j]
 			
 		# backtest at optimal sd.trigger to get statistics
-		if (length(hist.prices.close) > 0) {
+		if (length(hist.prices.close) > 0) {		# skips if null value (typically no intersect in price history) (common with BRK.B)
 			pairs.trade = bt.pairstrade.longonly(sd.trigger, hist.prices.close, hist.prices.open)
 		
 			
@@ -228,5 +228,6 @@ for (i in 1:half) {
 }
 
 
-write.csv(df, "results 1-25 and 51-75.csv")
+write.csv(df, "results 451-475 and 476-500.csv")
+
 
